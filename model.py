@@ -1,20 +1,23 @@
-import math
 import numpy as np
 import pandas as pd
 
+
 class Binary_classifier():
 
-    def __init__(self, X_train, Y_train):
-        self.X_train = self.normalize(X_train, 0, 3).astype(float)
+    def __init__(self, X_train: pd.DataFrame, Y_train: pd.DataFrame):
+        self.X_train = self.normalize(X_train).astype(float)
         self.Y_train = Y_train.values.astype(float)
         self.weights, self.bias = self.create_random_weights()
-        self.sig_z = self.get_probabilities()
+        self.sig_z = self.get_probabilities(X_train)
         self.n = len(self.sig_z)
         self.d_loss_w, self.d_loss_b = self.gradient()
         self.speed = 0.001
-        self.learning()
-        self.sig_z = self.get_probabilities()
-        self.accuracy = self.accuracy()
+        self.learning(steps=10000)
+        self.train_accuracy = self.accuracy()
+
+    @staticmethod
+    def binary_format(x):
+        return 1 if x > 0.5 else 0
 
     @staticmethod
     def sigmoid(z):
@@ -22,15 +25,16 @@ class Binary_classifier():
         return 1/(1+np.exp(-z))
 
     @staticmethod
-    def normalize(X_train: pd.DataFrame, a: int, b: int):
+    def normalize(data: pd.DataFrame, a: float = 0.0, b: float = 1.0):
         # нормализация данных
-        X_train_scaled = a + (X_train - X_train.min())*(b-a) / (X_train.max() - X_train.min())
-        return X_train_scaled.values
+        data_scaled = a + (data - data.min())*(b-a) / (data.max() - data.min())
+
+        return data_scaled.values
 
     def accuracy(self):
         count = 0
         for i in range(self.n):
-            predict = 1 if self.sig_z[i][0] > 0.5 else 0
+            predict = self.binary_format(self.sig_z[i][0])
             if predict == self.Y_train[i]:
                 count += 1
 
@@ -40,19 +44,21 @@ class Binary_classifier():
     def create_random_weights(self):
         # веса от -0.1 до 0.1
         np.random.seed(seed=42)
-        weights = np.random.uniform(-0.1, 0.1, size=(8, 1))
+        weights = np.random.uniform(-0.1, 0.1, size=(self.X_train.shape[1], 1))
         bias = np.random.uniform(-0.1, 0.1, size = (1, 1))
         return weights, bias
 
-    def get_probabilities(self):
+    def get_probabilities(self, data):
         # вычисление полученных вероятностей
-        z = np.dot(self.X_train, self.weights) + self.bias
+        z = np.dot(data, self.weights) + self.bias
         sig_z = self.sigmoid(z)
         return sig_z
 
     def get_loss(self):
         # вычисление функции потерь
-        last_loss = (1/self.n)*(-sum([(self.Y_train[i]*math.log(self.sig_z[i][0]) + (1 - self.Y_train[i])*math.log(1 - self.sig_z[i][0])) for i in range(self.n)]))
+        last_loss = (1/self.n)*(
+            -np.sum(self.Y_train * np.log(self.sig_z + 1e-9) +
+                    (1 - self.Y_train) * np.log(1 - self.sig_z + 1e-9)) )
         return last_loss
 
     def gradient(self):
@@ -61,19 +67,23 @@ class Binary_classifier():
         d_loss_b = (1 / self.n) * np.sum(self.sig_z - self.Y_train.reshape(-1, 1))
         return d_loss_w, d_loss_b
 
-    def learning(self):
-        # градиентный спуск, ищем локальный минимум
-        while True:
-            self.sig_z = self.get_probabilities()
+    def learning(self, steps=10000):
+        # градиентный спуск
+        for _ in range(steps):
+            self.sig_z = self.get_probabilities(self.X_train)
             self.d_loss_w, self.d_loss_b = self.gradient()
-            # вычисление функции потерь
-            last_loss = self.get_loss()
-            #print(last_loss)
-            if last_loss < 0.5: break
+            self.get_loss()
             # обновляем веса
             self.weights -= self.speed * self.d_loss_w
             self.bias -= self.speed * self.d_loss_b
 
-# accuracy before learning: 0.5941011235955056
-# last loss: 0.49999829353080993
-# accuracy after learning: 0.7710674157303371
+    def get_predict(self, data: pd.DataFrame) -> np.ndarray:
+        data = self.normalize(data, 0, 3).astype(float)
+        data_sig_z = self.get_probabilities(data)
+        predict = np.apply_along_axis(self.binary_format, axis=1, arr=data_sig_z)
+
+        return predict
+
+# train accuracy before learning: 0.6
+# train accuracy after learning: 0.8
+# test accuracy: 0.78
